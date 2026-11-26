@@ -1,0 +1,1113 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>本格オセロ - Othello Game</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700;900&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Noto Sans JP', sans-serif;
+            background: radial-gradient(circle at top, #1e293b 0%, #0f172a 100%);
+            color: #f8fafc;
+            touch-action: manipulation;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+
+    /* オセロ盤のスタイル */
+    .board-frame {
+        background: linear-gradient(145deg, #2c1e16, #1a110b);
+        box-shadow: 0 20px 40px -10px rgba(0, 0, 0, 0.7), inset 0 1px 1px rgba(255, 255, 255, 0.15);
+        border: 3px solid #3d2b1f;
+    }
+
+    .board-grid {
+        background-color: #064e3b;
+        background-image: 
+            radial-gradient(rgba(16, 185, 129, 0.12) 1px, transparent 0),
+            linear-gradient(to bottom right, #059669, #047857);
+        background-size: 20px 20px, 100% 100%;
+        box-shadow: inset 0 0 15px rgba(0, 0, 0, 0.6);
+    }
+
+    .cell {
+        position: relative;
+        aspect-ratio: 1 / 1;
+        border: 1px solid rgba(6, 78, 59, 0.75);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        transition: background-color 0.15s ease;
+    }
+
+    .cell:hover.valid-hover {
+        background-color: rgba(255, 255, 255, 0.12);
+    }
+
+    /* 盤面の4つの星（ドット） */
+    .star-dot {
+        position: absolute;
+        width: 6px;
+        height: 6px;
+        background-color: rgba(6, 78, 59, 0.9);
+        border-radius: 50%;
+        z-index: 1;
+        pointer-events: none;
+    }
+
+    /* 置ける場所のガイド */
+    .valid-hint {
+        width: 28%;
+        height: 28%;
+        border-radius: 50%;
+        background-color: rgba(255, 255, 255, 0.28);
+        box-shadow: 0 0 8px rgba(255, 255, 255, 0.2);
+        transition: transform 0.2s ease, background-color 0.2s ease;
+        pointer-events: none;
+        z-index: 2;
+    }
+
+    .cell:hover .valid-hint {
+        transform: scale(1.25);
+        background-color: rgba(255, 255, 255, 0.5);
+    }
+
+    /* 石（ディスク）の3Dフリップアニメーション */
+    .disc-container {
+        width: 82%;
+        height: 82%;
+        perspective: 600px;
+        z-index: 3;
+        pointer-events: none;
+    }
+
+    .disc {
+        width: 100%;
+        height: 100%;
+        position: relative;
+        transform-style: preserve-3d;
+        transition: transform 0.45s cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+
+    .disc.is-white {
+        transform: rotateY(180deg);
+    }
+
+    .disc-face {
+        position: absolute;
+        width: 100%;
+        height: 100%;
+        border-radius: 50%;
+        backface-visibility: hidden;
+        -webkit-backface-visibility: hidden;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.45), inset 0 2px 3px rgba(255, 255, 255, 0.25);
+    }
+
+    .disc-black {
+        background: radial-gradient(circle at 32% 32%, #475569, #0f172a 70%, #020617 100%);
+        border: 1px solid #020617;
+    }
+
+    .disc-white {
+        background: radial-gradient(circle at 32% 32%, #ffffff, #e2e8f0 70%, #94a3b8 100%);
+        border: 1px solid #cbd5e1;
+        transform: rotateY(180deg);
+    }
+
+    /* 新しく置かれた石のアニメーション */
+    @keyframes dropIn {
+        0% { transform: scale(1.35); opacity: 0.5; }
+        100% { transform: scale(1); opacity: 1; }
+    }
+    .just-placed {
+        animation: dropIn 0.25s ease-out forwards;
+    }
+
+    /* 最後に置かれた石のマーカー */
+    .last-move-marker {
+        position: absolute;
+        width: 24%;
+        height: 24%;
+        border-radius: 50%;
+        background-color: #ef4444;
+        box-shadow: 0 0 6px rgba(239, 68, 68, 0.8);
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        z-index: 5;
+        pointer-events: none;
+    }
+
+    /* トースト・通知アニメーション */
+    @keyframes fadeSlideDown {
+        0% { opacity: 0; transform: translate(-50%, -15px); }
+        15% { opacity: 1; transform: translate(-50%, 0); }
+        85% { opacity: 1; transform: translate(-50%, 0); }
+        100% { opacity: 0; transform: translate(-50%, -10px); }
+    }
+    .toast-animate {
+        animation: fadeSlideDown 2.2s ease-in-out forwards;
+    }
+
+    /* 思考中ドットアニメーション */
+    .thinking-dots span {
+        animation: blink 1.4s infinite both;
+    }
+    .thinking-dots span:nth-child(2) { animation-delay: 0.2s; }
+    .thinking-dots span:nth-child(3) { animation-delay: 0.4s; }
+    @keyframes blink {
+        0%, 80%, 100% { opacity: 0.2; }
+        40% { opacity: 1; }
+    }
+</style>
+</head>
+<body class="min-h-screen flex flex-col items-center justify-between p-3 sm:p-5">
+
+<!-- ヘッダー -->
+<header class="w-full max-w-lg flex items-center justify-between mb-2">
+    <div class="flex items-center gap-2.5">
+        <div class="w-8 h-8 rounded-xl bg-emerald-600 flex items-center justify-center shadow-lg border border-emerald-400/30">
+            <div class="w-4 h-4 rounded-full bg-slate-900 border-2 border-white"></div>
+        </div>
+        <div>
+            <h1 class="text-lg sm:text-xl font-black tracking-wide text-white leading-tight">OTHELLO</h1>
+            <p class="text-[11px] text-slate-400 font-medium">本格リバーシ</p>
+        </div>
+    </div>
+    <button id="openSettingsBtn" class="px-3.5 py-2 rounded-xl bg-slate-800/90 hover:bg-slate-700 text-slate-200 text-xs sm:text-sm font-bold border border-slate-700 shadow transition flex items-center gap-1.5 active:scale-95">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+        </svg>
+        対局設定
+    </button>
+</header>
+
+<!-- メインコンテンツ -->
+<main class="w-full max-w-lg flex flex-col items-center gap-3 sm:gap-4 my-auto">
+
+    <!-- スコアボード＆ターン表示 -->
+    <div class="w-full grid grid-cols-3 gap-2 items-center bg-slate-800/70 backdrop-blur-md p-2.5 rounded-2xl border border-slate-700/80 shadow-xl">
+        <!-- 黒プレイヤー -->
+        <div id="blackCard" class="flex items-center justify-between px-3 py-2 rounded-xl transition-all duration-300 border-2 border-emerald-500 bg-slate-900/90">
+            <div class="flex items-center gap-2">
+                <span class="w-5 h-5 sm:w-6 sm:h-6 rounded-full bg-slate-950 border border-slate-600 shadow-inner inline-block shrink-0"></span>
+                <div class="flex flex-col">
+                    <span id="blackLabel" class="text-[11px] sm:text-xs font-bold text-slate-300">あなた</span>
+                    <span class="text-[10px] text-slate-500">黒 (先攻)</span>
+                </div>
+            </div>
+            <span id="blackScore" class="text-xl sm:text-2xl font-black text-white">2</span>
+        </div>
+
+        <!-- 中央ステータス -->
+        <div class="flex flex-col items-center justify-center text-center px-1">
+            <span id="modeBadge" class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 mb-1">
+                CPU (ふつう)
+            </span>
+            <div id="turnStatus" class="text-xs sm:text-sm font-bold text-white leading-tight">
+                黒の番
+            </div>
+            <div id="thinkingIndicator" class="hidden text-[11px] text-amber-400 font-medium thinking-dots mt-0.5">
+                思考中<span>.</span><span>.</span><span>.</span>
+            </div>
+        </div>
+
+        <!-- 白プレイヤー -->
+        <div id="whiteCard" class="flex items-center justify-between px-3 py-2 rounded-xl transition-all duration-300 border-2 border-transparent bg-slate-900/40">
+            <span id="whiteScore" class="text-xl sm:text-2xl font-black text-white">2</span>
+            <div class="flex items-center gap-2 text-right">
+                <div class="flex flex-col">
+                    <span id="whiteLabel" class="text-[11px] sm:text-xs font-bold text-slate-300">CPU</span>
+                    <span class="text-[10px] text-slate-500">白 (後攻)</span>
+                </div>
+                <span class="w-5 h-5 sm:w-6 sm:h-6 rounded-full bg-slate-100 border border-slate-300 shadow-inner inline-block shrink-0"></span>
+            </div>
+        </div>
+    </div>
+
+    <!-- オセロ盤コンテナ -->
+    <div class="relative w-full aspect-square max-w-[440px] board-frame p-2.5 sm:p-3.5 rounded-2xl">
+        <!-- 通知トースト（パスなど） -->
+        <div id="toastNotification" class="hidden absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-30 pointer-events-none">
+            <div id="toastText" class="px-5 py-2.5 rounded-full bg-slate-900/95 text-amber-300 font-bold text-sm sm:text-base border border-amber-400/50 shadow-2xl whitespace-nowrap">
+                打てる場所がないためパスします
+            </div>
+        </div>
+
+        <!-- 8x8 グリッド -->
+        <div id="board" class="w-full h-full grid grid-cols-8 grid-rows-8 board-grid rounded-lg overflow-hidden">
+            <!-- JSで64マスを生成 -->
+        </div>
+    </div>
+
+    <!-- 操作ボタンバー -->
+    <div class="w-full max-w-[440px] grid grid-cols-3 gap-2.5">
+        <button id="undoBtn" class="py-3 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 disabled:opacity-40 disabled:pointer-events-none text-slate-200 font-bold text-xs sm:text-sm border border-slate-700 shadow-md transition flex items-center justify-center gap-1.5 active:scale-95">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-amber-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
+            </svg>
+            待った
+        </button>
+
+        <button id="toggleHintBtn" class="py-3 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs sm:text-sm border border-slate-700 shadow-md transition flex items-center justify-center gap-1.5 active:scale-95">
+            <span id="hintDot" class="w-2.5 h-2.5 rounded-full bg-emerald-400"></span>
+            ガイド: ON
+        </button>
+
+        <button id="resetBtn" class="py-3 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs sm:text-sm shadow-md shadow-emerald-950/50 transition flex items-center justify-center gap-1.5 active:scale-95">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+            最初から
+        </button>
+    </div>
+</main>
+
+<!-- フッター余白 -->
+<footer class="text-[11px] text-slate-500 mt-2">
+    角（隅）を取ると有利に試合を進められます
+</footer>
+
+<!-- 設定モーダル -->
+<div id="settingsModal" class="hidden fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="bg-slate-900 border border-slate-700 rounded-3xl w-full max-w-sm p-6 shadow-2xl transform transition-all">
+        <div class="flex items-center justify-between mb-5">
+            <h2 class="text-lg font-black text-white flex items-center gap-2">
+                <span class="w-2 h-5 bg-emerald-500 rounded-full"></span>
+                対局設定
+            </h2>
+            <button id="closeSettingsBtn" class="text-slate-400 hover:text-white p-1 rounded-lg">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+            </button>
+        </div>
+
+        <!-- 対戦モード -->
+        <div class="mb-5">
+            <label class="block text-xs font-bold text-slate-400 mb-2">対戦モード</label>
+            <div class="grid grid-cols-2 gap-2">
+                <button type="button" data-mode="cpu" class="mode-option py-2.5 px-3 rounded-xl font-bold text-sm border-2 border-emerald-500 bg-emerald-500/15 text-white transition">
+                    CPU対戦
+                </button>
+                <button type="button" data-mode="pvp" class="mode-option py-2.5 px-3 rounded-xl font-bold text-sm border-2 border-slate-700 bg-slate-800 text-slate-400 transition">
+                    2人対戦 (1台)
+                </button>
+            </div>
+        </div>
+
+        <!-- CPU設定エリア -->
+        <div id="cpuOptionsArea" class="space-y-5">
+            <!-- 難易度 -->
+            <div>
+                <label class="block text-xs font-bold text-slate-400 mb-2">CPUの強さ</label>
+                <div class="grid grid-cols-3 gap-2">
+                    <button type="button" data-diff="easy" class="diff-option py-2 px-2 rounded-xl font-bold text-xs border-2 border-slate-700 bg-slate-800 text-slate-400 transition">
+                        かんたん
+                    </button>
+                    <button type="button" data-diff="normal" class="diff-option py-2 px-2 rounded-xl font-bold text-xs border-2 border-emerald-500 bg-emerald-500/15 text-white transition">
+                        ふつう
+                    </button>
+                    <button type="button" data-diff="hard" class="diff-option py-2 px-2 rounded-xl font-bold text-xs border-2 border-slate-700 bg-slate-800 text-slate-400 transition">
+                        むずかしい
+                    </button>
+                </div>
+            </div>
+
+            <!-- 手番（色）選択 -->
+            <div>
+                <label class="block text-xs font-bold text-slate-400 mb-2">あなたの石（手番）</label>
+                <div class="grid grid-cols-2 gap-2">
+                    <button type="button" data-color="1" class="color-option py-2.5 px-3 rounded-xl font-bold text-xs sm:text-sm border-2 border-emerald-500 bg-emerald-500/15 text-white flex items-center justify-center gap-2 transition">
+                        <span class="w-4 h-4 rounded-full bg-slate-950 border border-slate-500"></span>
+                        黒（先攻）
+                    </button>
+                    <button type="button" data-color="2" class="color-option py-2.5 px-3 rounded-xl font-bold text-xs sm:text-sm border-2 border-slate-700 bg-slate-800 text-slate-400 flex items-center justify-center gap-2 transition">
+                        <span class="w-4 h-4 rounded-full bg-white border border-slate-300"></span>
+                        白（後攻）
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <button id="startNewGameBtn" class="w-full mt-6 py-3.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-sm shadow-lg shadow-emerald-950/50 transition active:scale-95">
+            この設定で対局開始
+        </button>
+    </div>
+</div>
+
+<!-- 勝敗結果モーダル -->
+<div id="resultModal" class="hidden fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="bg-slate-900 border border-slate-700 rounded-3xl w-full max-w-sm p-6 text-center shadow-2xl">
+        <div id="resultBadge" class="inline-block px-3 py-1 rounded-full text-xs font-black bg-amber-500/20 text-amber-300 border border-amber-500/30 mb-2">
+            GAME SET
+        </div>
+        <h2 id="resultTitle" class="text-2xl sm:text-3xl font-black text-white mb-4">
+            黒の勝ち！
+        </h2>
+
+        <div class="flex items-center justify-center gap-6 bg-slate-800/80 py-4 px-6 rounded-2xl border border-slate-700 mb-6">
+            <div class="flex flex-col items-center">
+                <div class="flex items-center gap-1.5 mb-1">
+                    <span class="w-4 h-4 rounded-full bg-slate-950 border border-slate-600"></span>
+                    <span class="text-xs font-bold text-slate-300">黒</span>
+                </div>
+                <span id="finalBlackScore" class="text-3xl font-black text-white">34</span>
+            </div>
+            <div class="text-slate-500 font-black text-xl">-</div>
+            <div class="flex flex-col items-center">
+                <div class="flex items-center gap-1.5 mb-1">
+                    <span class="w-4 h-4 rounded-full bg-white border border-slate-300"></span>
+                    <span class="text-xs font-bold text-slate-300">白</span>
+                </div>
+                <span id="finalWhiteScore" class="text-3xl font-black text-white">30</span>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-3">
+            <button id="closeResultBtn" class="py-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-sm border border-slate-700 transition">
+                盤面を見る
+            </button>
+            <button id="playAgainBtn" class="py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-sm shadow-lg transition">
+                もう一度遊ぶ
+            </button>
+        </div>
+    </div>
+</div>
+
+<script>
+    /**
+     * オセロ（リバーシ）ゲームロジック & UI制御
+     */
+    const EMPTY = 0;
+    const BLACK = 1;
+    const WHITE = 2;
+
+    // 8方向のベクトル
+    const DIRECTIONS = [
+        [-1, -1], [-1, 0], [-1, 1],
+        [0, -1],           [0, 1],
+        [1, -1],  [1, 0],  [1, 1]
+    ];
+
+    // CPU評価用の重み付けテーブル（角を高く、角の隣を低く評価）
+    const POSITION_WEIGHTS = [
+        [120, -20,  20,   5,   5,  20, -20, 120],
+        [-20, -40,  -5,  -5,  -5,  -5, -40, -20],
+        [ 20,  -5,  15,   3,   3,  15,  -5,  20],
+        [  5,  -5,   3,   3,   3,   3,  -5,   5],
+        [  5,  -5,   3,   3,   3,   3,  -5,   5],
+        [ 20,  -5,  15,   3,   3,  15,  -5,  20],
+        [-20, -40,  -5,  -5,  -5,  -5, -40, -20],
+        [120, -20,  20,   5,   5,  20, -20, 120]
+    ];
+
+    // ゲーム状態
+    const state = {
+        board: [],
+        currentPlayer: BLACK,
+        mode: 'cpu',         // 'cpu' | 'pvp'
+        difficulty: 'normal', // 'easy' | 'normal' | 'hard'
+        humanColor: BLACK,   // CPU対戦時のプレイヤー色
+        showHints: true,
+        lastMove: null,      // { r, c }
+        history: [],         // 待った用の履歴スタック
+        isGameOver: false,
+        isProcessing: false  // アニメーション・CPU思考中ロック
+    };
+
+    // 一時的な設定モーダル選択値
+    let tempSettings = {
+        mode: 'cpu',
+        difficulty: 'normal',
+        humanColor: BLACK
+    };
+
+    let cpuTimer = null;
+
+    // DOM要素
+    const boardEl = document.getElementById('board');
+    const blackScoreEl = document.getElementById('blackScore');
+    const whiteScoreEl = document.getElementById('whiteScore');
+    const blackCardEl = document.getElementById('blackCard');
+    const whiteCardEl = document.getElementById('whiteCard');
+    const blackLabelEl = document.getElementById('blackLabel');
+    const whiteLabelEl = document.getElementById('whiteLabel');
+    const turnStatusEl = document.getElementById('turnStatus');
+    const thinkingEl = document.getElementById('thinkingIndicator');
+    const modeBadgeEl = document.getElementById('modeBadge');
+    const undoBtn = document.getElementById('undoBtn');
+    const toggleHintBtn = document.getElementById('toggleHintBtn');
+    const hintDot = document.getElementById('hintDot');
+    const toastEl = document.getElementById('toastNotification');
+    const toastTextEl = document.getElementById('toastText');
+
+    // 初期化
+    function init() {
+        createBoardDOM();
+        bindEvents();
+        startNewGame();
+    }
+
+    // 64マスのDOM要素を生成
+    function createBoardDOM() {
+        boardEl.innerHTML = '';
+        // 星（目印の点）を配置する座標
+        const starCoords = new Set(['2,2', '2,6', '6,2', '6,6']);
+
+        for (let r = 0; r < 8; r++) {
+            for (let c = 0; c < 8; c++) {
+                const cell = document.createElement('div');
+                cell.className = 'cell';
+                cell.dataset.r = r;
+                cell.dataset.c = c;
+
+                // 4隅の交点に星を描画（マスの左上角基準で擬似配置）
+                if (starCoords.has(`${r},${c}`)) {
+                    const star = document.createElement('div');
+                    star.className = 'star-dot';
+                    star.style.top = '-3px';
+                    star.style.left = '-3px';
+                    cell.appendChild(star);
+                }
+
+                cell.addEventListener('click', () => handleCellClick(r, c));
+                boardEl.appendChild(cell);
+            }
+        }
+    }
+
+    // 新しい対局を開始
+    function startNewGame() {
+        if (cpuTimer) clearTimeout(cpuTimer);
+
+        state.board = Array.from({ length: 8 }, () => Array(8).fill(EMPTY));
+        // 初期配置
+        state.board[3][3] = WHITE;
+        state.board[3][4] = BLACK;
+        state.board[4][3] = BLACK;
+        state.board[4][4] = WHITE;
+
+        state.currentPlayer = BLACK;
+        state.lastMove = null;
+        state.history = [];
+        state.isGameOver = false;
+        state.isProcessing = false;
+
+        document.getElementById('resultModal').classList.add('hidden');
+        updatePlayerLabels();
+        renderBoard(true);
+        updateUI();
+
+        // CPUが先攻（黒）の場合
+        if (state.mode === 'cpu' && state.humanColor === WHITE) {
+            scheduleCpuMove();
+        }
+    }
+
+    // ラベル表示の更新
+    function updatePlayerLabels() {
+        if (state.mode === 'pvp') {
+            blackLabelEl.textContent = 'プレイヤー1';
+            whiteLabelEl.textContent = 'プレイヤー2';
+            modeBadgeEl.textContent = '2人対戦';
+        } else {
+            const diffMap = { easy: 'かんたん', normal: 'ふつう', hard: 'むずかしい' };
+            modeBadgeEl.textContent = `CPU (${diffMap[state.difficulty]})`;
+            if (state.humanColor === BLACK) {
+                blackLabelEl.textContent = 'あなた';
+                whiteLabelEl.textContent = 'CPU';
+            } else {
+                blackLabelEl.textContent = 'CPU';
+                whiteLabelEl.textContent = 'あなた';
+            }
+        }
+    }
+
+    // 指定したプレイヤーが置ける全座標を取得
+    function getValidMoves(board, player) {
+        const moves = [];
+        for (let r = 0; r < 8; r++) {
+            for (let c = 0; c < 8; c++) {
+                const flipped = getFlippedDiscs(board, r, c, player);
+                if (flipped.length > 0) {
+                    moves.push({ r, c, flipped });
+                }
+            }
+        }
+        return moves;
+    }
+
+    // (r, c) に置いた場合に裏返る石の座標リストを返す
+    function getFlippedDiscs(board, r, c, player) {
+        if (board[r][c] !== EMPTY) return [];
+        const opponent = player === BLACK ? WHITE : BLACK;
+        const totalFlipped = [];
+
+        for (const [dr, dc] of DIRECTIONS) {
+            let nr = r + dr;
+            let nc = c + dc;
+            const line = [];
+
+            while (nr >= 0 && nr < 8 && nc >= 0 && nc < 8 && board[nr][nc] === opponent) {
+                line.push({ r: nr, c: nc });
+                nr += dr;
+                nc += dc;
+            }
+
+            if (line.length > 0 && nr >= 0 && nr < 8 && nc >= 0 && nc < 8 && board[nr][nc] === player) {
+                totalFlipped.push(...line);
+            }
+        }
+        return totalFlipped;
+    }
+
+    // マスがクリックされた時の処理
+    function handleCellClick(r, c) {
+        if (state.isGameOver || state.isProcessing) return;
+
+        // CPUのターンの場合は操作無効
+        if (state.mode === 'cpu' && state.currentPlayer !== state.humanColor) {
+            return;
+        }
+
+        const flipped = getFlippedDiscs(state.board, r, c, state.currentPlayer);
+        if (flipped.length === 0) return;
+
+        executeMove(r, c, flipped);
+    }
+
+    // 石を置いて盤面を進める
+    function executeMove(r, c, flipped) {
+        state.isProcessing = true;
+
+        // 履歴を保存（待った用）
+        state.history.push({
+            board: state.board.map(row => [...row]),
+            currentPlayer: state.currentPlayer,
+            lastMove: state.lastMove ? { ...state.lastMove } : null
+        });
+
+        // 盤面データ更新
+        const placedColor = state.currentPlayer;
+        state.board[r][c] = placedColor;
+        for (const pos of flipped) {
+            state.board[pos.r][pos.c] = placedColor;
+        }
+        state.lastMove = { r, c };
+
+        // 描画更新（置いた石と裏返る石をアニメーション付きで反映）
+        renderBoard(false, { r, c }, flipped);
+        updateScores();
+
+        // アニメーション完了後に次の手番へ移行
+        setTimeout(() => {
+            advanceTurn();
+        }, 380);
+    }
+
+    // 手番の切り替え・パス判定・終了判定
+    function advanceTurn() {
+        const nextPlayer = state.currentPlayer === BLACK ? WHITE : BLACK;
+        const nextMoves = getValidMoves(state.board, nextPlayer);
+
+        if (nextMoves.length > 0) {
+            // 次のプレイヤーに打てる手がある
+            state.currentPlayer = nextPlayer;
+            state.isProcessing = false;
+            renderBoard(false);
+            updateUI();
+
+            if (state.mode === 'cpu' && state.currentPlayer !== state.humanColor) {
+                scheduleCpuMove();
+            }
+        } else {
+            // 次のプレイヤーがパス -> 現在のプレイヤーに打てる手があるか確認
+            const currentMoves = getValidMoves(state.board, state.currentPlayer);
+            if (currentMoves.length > 0) {
+                const passName = nextPlayer === BLACK ? '黒' : '白';
+                showToast(`${passName}は打てる場所がないためパスします`);
+                state.isProcessing = false;
+                renderBoard(false);
+                updateUI();
+
+                if (state.mode === 'cpu' && state.currentPlayer !== state.humanColor) {
+                    scheduleCpuMove();
+                }
+            } else {
+                // 両者とも打てる場所がない -> ゲーム終了
+                endGame();
+            }
+        }
+    }
+
+    // CPUの思考スケジュール
+    function scheduleCpuMove() {
+        state.isProcessing = true;
+        updateUI();
+
+        const delay = state.difficulty === 'easy' ? 450 : (state.difficulty === 'normal' ? 600 : 750);
+        cpuTimer = setTimeout(() => {
+            if (state.isGameOver) return;
+            const move = chooseCpuMove();
+            if (move) {
+                executeMove(move.r, move.c, move.flipped);
+            }
+        }, delay);
+    }
+
+    // CPUの思考アルゴリズム
+    function chooseCpuMove() {
+        const cpuColor = state.currentPlayer;
+        const validMoves = getValidMoves(state.board, cpuColor);
+        if (validMoves.length === 0) return null;
+
+        // 1. かんたん：ランダム（やや角を優先する程度）
+        if (state.difficulty === 'easy') {
+            return validMoves[Math.floor(Math.random() * validMoves.length)];
+        }
+
+        // 2. ふつう：位置の重み付け + 獲得石数評価
+        if (state.difficulty === 'normal') {
+            let bestScore = -Infinity;
+            let bestMoves = [];
+
+            for (const move of validMoves) {
+                const score = POSITION_WEIGHTS[move.r][move.c] + move.flipped.length * 2 + (Math.random() * 6 - 3);
+                if (score > bestScore) {
+                    bestScore = score;
+                    bestMoves = [move];
+                } else if (Math.abs(score - bestScore) < 0.01) {
+                    bestMoves.push(move);
+                }
+            }
+            return bestMoves[Math.floor(Math.random() * bestMoves.length)];
+        }
+
+        // 3. むずかしい：ミニマックス法（深さ3〜4 + 位置評価 + 着手可能数評価）
+        const emptyCount = countEmpty(state.board);
+        const depth = emptyCount <= 10 ? 5 : 3; // 終盤は深く読む
+        let bestScore = -Infinity;
+        let bestMove = validMoves[0];
+
+        for (const move of validMoves) {
+            const nextBoard = simulateMove(state.board, move, cpuColor);
+            const score = minimax(nextBoard, depth - 1, -Infinity, Infinity, false, cpuColor);
+            if (score > bestScore) {
+                bestScore = score;
+                bestMove = move;
+            }
+        }
+        return bestMove;
+    }
+
+    // アルファベータ法付きミニマックス探索
+    function minimax(board, depth, alpha, beta, isMaximizing, cpuColor) {
+        const humanColor = cpuColor === BLACK ? WHITE : BLACK;
+        const currentTurn = isMaximizing ? cpuColor : humanColor;
+        const validMoves = getValidMoves(board, currentTurn);
+
+        if (depth === 0) {
+            return evaluateBoard(board, cpuColor);
+        }
+
+        if (validMoves.length === 0) {
+            const opponentTurn = currentTurn === BLACK ? WHITE : BLACK;
+            const oppMoves = getValidMoves(board, opponentTurn);
+            if (oppMoves.length === 0) {
+                // 終局評価
+                const counts = getCounts(board);
+                const diff = cpuColor === BLACK ? (counts.black - counts.white) : (counts.white - counts.black);
+                return diff * 1000;
+            }
+            // パスして相手の手番へ
+            return minimax(board, depth - 1, alpha, beta, !isMaximizing, cpuColor);
+        }
+
+        if (isMaximizing) {
+            let maxEval = -Infinity;
+            for (const move of validMoves) {
+                const nextBoard = simulateMove(board, move, currentTurn);
+                const ev = minimax(nextBoard, depth - 1, alpha, beta, false, cpuColor);
+                maxEval = Math.max(maxEval, ev);
+                alpha = Math.max(alpha, ev);
+                if (beta <= alpha) break;
+            }
+            return maxEval;
+        } else {
+            let minEval = Infinity;
+            for (const move of validMoves) {
+                const nextBoard = simulateMove(board, move, currentTurn);
+                const ev = minimax(nextBoard, depth - 1, alpha, beta, true, cpuColor);
+                minEval = Math.min(minEval, ev);
+                beta = Math.min(beta, ev);
+                if (beta <= alpha) break;
+            }
+            return minEval;
+        }
+    }
+
+    // 盤面評価関数
+    function evaluateBoard(board, cpuColor) {
+        const oppColor = cpuColor === BLACK ? WHITE : BLACK;
+        let positionalScore = 0;
+        let cpuDiscs = 0;
+        let oppDiscs = 0;
+
+        for (let r = 0; r < 8; r++) {
+            for (let c = 0; c < 8; c++) {
+                if (board[r][c] === cpuColor) {
+                    positionalScore += POSITION_WEIGHTS[r][c];
+                    cpuDiscs++;
+                } else if (board[r][c] === oppColor) {
+                    positionalScore -= POSITION_WEIGHTS[r][c];
+                    oppDiscs++;
+                }
+            }
+        }
+
+        // 着手可能数（モビリティ）の差
+        const cpuMobility = getValidMoves(board, cpuColor).length;
+        const oppMobility = getValidMoves(board, oppColor).length;
+        const mobilityScore = (cpuMobility - oppMobility) * 8;
+
+        // 終盤は石数の差を重視
+        const totalDiscs = cpuDiscs + oppDiscs;
+        const discWeight = totalDiscs > 50 ? 12 : 1;
+
+        return positionalScore + mobilityScore + (cpuDiscs - oppDiscs) * discWeight;
+    }
+
+    function simulateMove(board, move, player) {
+        const copy = board.map(row => [...row]);
+        copy[move.r][move.c] = player;
+        for (const f of move.flipped) {
+            copy[f.r][f.c] = player;
+        }
+        return copy;
+    }
+
+    function countEmpty(board) {
+        let count = 0;
+        for (let r = 0; r < 8; r++) {
+            for (let c = 0; c < 8; c++) {
+                if (board[r][c] === EMPTY) count++;
+            }
+        }
+        return count;
+    }
+
+    function getCounts(board) {
+        let black = 0, white = 0;
+        for (let r = 0; r < 8; r++) {
+            for (let c = 0; c < 8; c++) {
+                if (board[r][c] === BLACK) black++;
+                else if (board[r][c] === WHITE) white++;
+            }
+        }
+        return { black, white };
+    }
+
+    // 「待った」機能
+    function handleUndo() {
+        if (state.isProcessing || state.history.length === 0) return;
+
+        if (state.mode === 'cpu') {
+            // CPU対戦時は自分の直前の手番まで巻き戻す
+            while (state.history.length > 0) {
+                const prev = state.history.pop();
+                state.board = prev.board;
+                state.currentPlayer = prev.currentPlayer;
+                state.lastMove = prev.lastMove;
+                if (state.currentPlayer === state.humanColor) {
+                    break;
+                }
+            }
+        } else {
+            // 2人対戦時は1手戻す
+            const prev = state.history.pop();
+            state.board = prev.board;
+            state.currentPlayer = prev.currentPlayer;
+            state.lastMove = prev.lastMove;
+        }
+
+        state.isGameOver = false;
+        document.getElementById('resultModal').classList.add('hidden');
+        renderBoard(true);
+        updateUI();
+        showToast('1手戻しました');
+    }
+
+    // ゲーム終了処理
+    function endGame() {
+        state.isGameOver = true;
+        state.isProcessing = false;
+        renderBoard(false);
+        updateUI();
+
+        const { black, white } = getCounts(state.board);
+        document.getElementById('finalBlackScore').textContent = black;
+        document.getElementById('finalWhiteScore').textContent = white;
+
+        const titleEl = document.getElementById('resultTitle');
+        if (black > white) {
+            titleEl.textContent = state.mode === 'cpu'
+                ? (state.humanColor === BLACK ? 'あなたの勝ち！🎉' : 'CPUの勝ち！')
+                : '黒の勝ち！🎉';
+        } else if (white > black) {
+            titleEl.textContent = state.mode === 'cpu'
+                ? (state.humanColor === WHITE ? 'あなたの勝ち！🎉' : 'CPUの勝ち！')
+                : '白の勝ち！🎉';
+        } else {
+            titleEl.textContent = '引き分け！🤝';
+        }
+
+        setTimeout(() => {
+            document.getElementById('resultModal').classList.remove('hidden');
+        }, 400);
+    }
+
+    // 盤面のDOM描画更新
+    function renderBoard(forceRebuild = false, placedPos = null, flippedList = []) {
+        const validMoves = (!state.isGameOver && !state.isProcessing)
+            ? getValidMoves(state.board, state.currentPlayer)
+            : [];
+        const validSet = new Set(validMoves.map(m => `${m.r},${m.c}`));
+        const flippedSet = new Set(flippedList.map(f => `${f.r},${f.c}`));
+
+        // CPU思考中は置ける場所のヒントを隠す
+        const canShowPlayerHints = state.showHints && !(state.mode === 'cpu' && state.currentPlayer !== state.humanColor);
+
+        const cells = boardEl.children;
+        for (let r = 0; r < 8; r++) {
+            for (let c = 0; c < 8; c++) {
+                const idx = r * 8 + c;
+                const cell = cells[idx];
+                const val = state.board[r][c];
+                const key = `${r},${c}`;
+
+                // ヒント表示の削除
+                const existingHint = cell.querySelector('.valid-hint');
+                if (existingHint) existingHint.remove();
+                cell.classList.remove('valid-hover');
+
+                // 最後の手マーカーの更新
+                const existingMarker = cell.querySelector('.last-move-marker');
+                if (existingMarker) existingMarker.remove();
+
+                let discContainer = cell.querySelector('.disc-container');
+
+                if (val === EMPTY) {
+                    if (discContainer) discContainer.remove();
+
+                    if (canShowPlayerHints && validSet.has(key)) {
+                        const hint = document.createElement('div');
+                        hint.className = 'valid-hint';
+                        cell.appendChild(hint);
+                        cell.classList.add('valid-hover');
+                    }
+                } else {
+                    // 石が存在する場合
+                    if (!discContainer || forceRebuild) {
+                        if (discContainer) discContainer.remove();
+                        discContainer = document.createElement('div');
+                        discContainer.className = 'disc-container';
+                        if (placedPos && placedPos.r === r && placedPos.c === c) {
+                            discContainer.classList.add('just-placed');
+                        }
+
+                        const disc = document.createElement('div');
+                        disc.className = `disc ${val === WHITE ? 'is-white' : ''}`;
+
+                        const blackFace = document.createElement('div');
+                        blackFace.className = 'disc-face disc-black';
+                        const whiteFace = document.createElement('div');
+                        whiteFace.className = 'disc-face disc-white';
+
+                        disc.appendChild(blackFace);
+                        disc.appendChild(whiteFace);
+                        discContainer.appendChild(disc);
+                        cell.appendChild(discContainer);
+                    } else {
+                        // 既存の石の反転アニメーション
+                        const disc = discContainer.querySelector('.disc');
+                        if (val === WHITE) {
+                            disc.classList.add('is-white');
+                        } else {
+                            disc.classList.remove('is-white');
+                        }
+                    }
+
+                    // 最終手マーカー
+                    if (state.lastMove && state.lastMove.r === r && state.lastMove.c === c) {
+                        const marker = document.createElement('div');
+                        marker.className = 'last-move-marker';
+                        discContainer.appendChild(marker);
+                    }
+                }
+            }
+        }
+    }
+
+    // スコア・ターン表示・ボタン状態の更新
+    function updateScores() {
+        const { black, white } = getCounts(state.board);
+        blackScoreEl.textContent = black;
+        whiteScoreEl.textContent = white;
+    }
+
+    function updateUI() {
+        updateScores();
+
+        const isCpuTurn = state.mode === 'cpu' && state.currentPlayer !== state.humanColor && !state.isGameOver;
+
+        // アクティブカードの強調
+        if (state.isGameOver) {
+            blackCardEl.className = 'flex items-center justify-between px-3 py-2 rounded-xl transition-all duration-300 border-2 border-transparent bg-slate-900/50';
+            whiteCardEl.className = 'flex items-center justify-between px-3 py-2 rounded-xl transition-all duration-300 border-2 border-transparent bg-slate-900/50';
+            turnStatusEl.textContent = '対局終了';
+            thinkingEl.classList.add('hidden');
+        } else if (state.currentPlayer === BLACK) {
+            blackCardEl.className = 'flex items-center justify-between px-3 py-2 rounded-xl transition-all duration-300 border-2 border-emerald-500 bg-slate-900/95 shadow-lg shadow-emerald-950/40';
+            whiteCardEl.className = 'flex items-center justify-between px-3 py-2 rounded-xl transition-all duration-300 border-2 border-transparent bg-slate-900/40 opacity-75';
+            turnStatusEl.textContent = '黒の番';
+        } else {
+            whiteCardEl.className = 'flex items-center justify-between px-3 py-2 rounded-xl transition-all duration-300 border-2 border-emerald-500 bg-slate-900/95 shadow-lg shadow-emerald-950/40';
+            blackCardEl.className = 'flex items-center justify-between px-3 py-2 rounded-xl transition-all duration-300 border-2 border-transparent bg-slate-900/40 opacity-75';
+            turnStatusEl.textContent = '白の番';
+        }
+
+        if (isCpuTurn) {
+            thinkingEl.classList.remove('hidden');
+        } else {
+            thinkingEl.classList.add('hidden');
+        }
+
+        // 待ったボタンの有効・無効
+        const canUndo = !state.isProcessing && state.history.length > 0 &&
+            !(state.mode === 'cpu' && state.humanColor === WHITE && state.history.length === 1);
+        undoBtn.disabled = !canUndo;
+    }
+
+    // トースト通知表示
+    function showToast(message) {
+        toastTextEl.textContent = message;
+        toastEl.classList.remove('hidden', 'toast-animate');
+        void toastEl.offsetWidth; // リフロー強制
+        toastEl.classList.add('toast-animate');
+    }
+
+    // イベントバインディング
+    function bindEvents() {
+        undoBtn.addEventListener('click', handleUndo);
+
+        toggleHintBtn.addEventListener('click', () => {
+            state.showHints = !state.showHints;
+            toggleHintBtn.innerHTML = state.showHints
+                ? `<span class="w-2.5 h-2.5 rounded-full bg-emerald-400"></span> ガイド: ON`
+                : `<span class="w-2.5 h-2.5 rounded-full bg-slate-500"></span> ガイド: OFF`;
+            renderBoard(false);
+        });
+
+        document.getElementById('resetBtn').addEventListener('click', () => {
+            startNewGame();
+        });
+
+        // 設定モーダル開閉
+        const settingsModal = document.getElementById('settingsModal');
+        document.getElementById('openSettingsBtn').addEventListener('click', () => {
+            tempSettings = {
+                mode: state.mode,
+                difficulty: state.difficulty,
+                humanColor: state.humanColor
+            };
+            syncSettingsModalUI();
+            settingsModal.classList.remove('hidden');
+        });
+
+        document.getElementById('closeSettingsBtn').addEventListener('click', () => {
+            settingsModal.classList.add('hidden');
+        });
+
+        // モード選択ボタン
+        document.querySelectorAll('.mode-option').forEach(btn => {
+            btn.addEventListener('click', () => {
+                tempSettings.mode = btn.dataset.mode;
+                syncSettingsModalUI();
+            });
+        });
+
+        // 難易度選択ボタン
+        document.querySelectorAll('.diff-option').forEach(btn => {
+            btn.addEventListener('click', () => {
+                tempSettings.difficulty = btn.dataset.diff;
+                syncSettingsModalUI();
+            });
+        });
+
+        // 石の色選択ボタン
+        document.querySelectorAll('.color-option').forEach(btn => {
+            btn.addEventListener('click', () => {
+                tempSettings.humanColor = Number(btn.dataset.color);
+                syncSettingsModalUI();
+            });
+        });
+
+        // 設定を適用して開始
+        document.getElementById('startNewGameBtn').addEventListener('click', () => {
+            state.mode = tempSettings.mode;
+            state.difficulty = tempSettings.difficulty;
+            state.humanColor = tempSettings.humanColor;
+            settingsModal.classList.add('hidden');
+            startNewGame();
+        });
+
+        // 結果モーダル操作
+        document.getElementById('closeResultBtn').addEventListener('click', () => {
+            document.getElementById('resultModal').classList.add('hidden');
+        });
+
+        document.getElementById('playAgainBtn').addEventListener('click', () => {
+            startNewGame();
+        });
+    }
+
+    // 設定モーダルの選択状態スタイル同期
+    function syncSettingsModalUI() {
+        document.querySelectorAll('.mode-option').forEach(btn => {
+            const active = btn.dataset.mode === tempSettings.mode;
+            btn.className = active
+                ? 'mode-option py-2.5 px-3 rounded-xl font-bold text-sm border-2 border-emerald-500 bg-emerald-500/15 text-white transition'
+                : 'mode-option py-2.5 px-3 rounded-xl font-bold text-sm border-2 border-slate-700 bg-slate-800 text-slate-400 transition';
+        });
+
+        const cpuArea = document.getElementById('cpuOptionsArea');
+        if (tempSettings.mode === 'cpu') {
+            cpuArea.classList.remove('opacity-40', 'pointer-events-none');
+        } else {
+            cpuArea.classList.add('opacity-40', 'pointer-events-none');
+        }
+
+        document.querySelectorAll('.diff-option').forEach(btn => {
+            const active = btn.dataset.diff === tempSettings.difficulty;
+            btn.className = active
+                ? 'diff-option py-2 px-2 rounded-xl font-bold text-xs border-2 border-emerald-500 bg-emerald-500/15 text-white transition'
+                : 'diff-option py-2 px-2 rounded-xl font-bold text-xs border-2 border-slate-700 bg-slate-800 text-slate-400 transition';
+        });
+
+        document.querySelectorAll('.color-option').forEach(btn => {
+            const active = Number(btn.dataset.color) === tempSettings.humanColor;
+            btn.className = active
+                ? 'color-option py-2.5 px-3 rounded-xl font-bold text-xs sm:text-sm border-2 border-emerald-500 bg-emerald-500/15 text-white flex items-center justify-center gap-2 transition'
+                : 'color-option py-2.5 px-3 rounded-xl font-bold text-xs sm:text-sm border-2 border-slate-700 bg-slate-800 text-slate-400 flex items-center justify-center gap-2 transition';
+        });
+    }
+
+    window.onload = init;
+</script>
+</body>
+</html>
